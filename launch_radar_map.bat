@@ -1,0 +1,3 @@
+@echo off
+echo Opening ESP32-S3 Wi-Fi Radio Camera in Default Web Browser...
+start "" "%~dp0radar_map.html"

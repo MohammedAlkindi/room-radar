@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Wi-Fi Spatial Tracker (2-Node RF Link)</title>
+    <style>
+        :root {
+            --bg: #090a0f;
+            --panel-bg: rgba(13, 16, 23, 0.85);
+            --border: rgba(255, 255, 255, 0.08);
+            --accent-cyan: #38bdf8;
+            --accent-green: #34d399;
+            --accent-rose: #fb7185;
+            --accent-amber: #fbbf24;
+            --text-primary: #f4f4f5;
+            --text-muted: #71717a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body {
+            background: var(--bg);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #webgl-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+        }
+
+        /* Top Header */
+        header {
+            position: absolute;
+            top: 20px; left: 24px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .title {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .title-badge {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: "SF Mono", Monaco, monospace;
+        }
+        .subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.02em;
+        }
+
+        /* Control Dock (Top Right) */
+        #control-dock {
+            position: absolute;
+            top: 20px; right: 24px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            backdrop-filter: blur(8px);
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        .btn-primary {
+            background: var(--accent-cyan);
+            color: #090a0f;
+            border-color: var(--accent-cyan);
+        }
+        .btn-primary:hover {
+            background: #7dd3fc;
+        }
+        .telemetry-pill {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(12px);
+        }
+
+        /* Left Spatial HUD */
+        #spatial-panel {
+            position: absolute;
+            left: 24px;
+            bottom: 24px;
+            z-index: 10;
+            width: 320px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            backdrop-filter: blur(16px);
+        }
+
+        .status-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: "SF Mono", Monaco, monospace;
+        }
+        .metric-val {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* Energy Meter Bar */
+        .meter-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .meter-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            font-family: "SF Mono", Monaco, monospace;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        .meter-track {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+        .meter-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent-green);
+            border-radius: 3px;
+            transition: width 0.08s ease, background-color 0.2s ease;
+        }
+
+        /* Signal Waveform */
+        canvas#waveCanvas {
+            width: 100%;
+            height: 44px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        #hint {
+            position: absolute;
+            bottom: 24px; right: 24px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            pointer-events: none;
+            z-index: 10;
+        }
+    </style>
+    <script src="three.min.js"></script>
+    <script src="OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="webgl-container"></div>
+
+    <header>
+        <div class="title">
+            <span>Spatial RF Tracker</span>
+            <span class="title-badge">2-NODE LINK</span>
+        </div>
+        <div class="subtitle">Direct Wi-Fi CSI Beam Disturbance & Position Tracking</div>
+    </header>
+
+    <div id="control-dock">
+        <button id="btnConnect" class="btn btn-primary">Connect Radar (COM15)</button>
+        <button id="btnZero" class="btn" title="Re-zero background floor">Zero Baseline</button>
+        <div id="liveTelemetry" class="telemetry-pill">
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#71717a;"></span>
+            WAITING FOR SERIAL
+        </div>
+    </div>
+
+    <div id="spatial-panel">
+        <div class="status-box">
+            <div class="status-indicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusLabel">ROOM STILL · CALM</span>
+            </div>
+            <span id="valConfidence" style="font-size:10px;font-family:'SF Mono',monospace;color:var(--text-muted);">CALIBRATED</span>
+        </div>
+
+        <div class="metric-row">
+            <span>ESTIMATED POSITION</span>
+            <span class="metric-val" id="valPos">Z: 1.85 m (MID-ROOM)</span>
+        </div>
+
+        <div class="metric-row">
+            <span>DOPPLER VELOCITY</span>
+            <span class="metric-val" id="valVel">0.00 m/s</span>
+        </div>
+
+        <div class="meter-container">
+            <div class="meter-label">
+                <span>RF Perturbation Energy</span>
+                <span id="valEnergy">0%</span>
+            </div>
+            <div class="meter-track">
+                <div class="meter-fill" id="energyFill"></div>
+            </div>
+        </div>
+
+        <div>
+            <div class="metric-row" style="margin-bottom: 4px;">
+                <span>CSI PERTURBATION WAVEFORM</span>
+                <span id="valPackets">0 PKTS</span>
+            </div>
+            <canvas id="waveCanvas" width="288" height="44"></canvas>
+        </div>
+    </div>
+
+    <div id="hint">ORBIT: LEFT-CLICK · PAN: RIGHT-CLICK · ZOOM: SCROLL</div>
+
+    <script>
+        // ---------------------------------------------------------------------
+        // 1. Three.js Spatial Environment Setup
+        // ---------------------------------------------------------------------
+        const container = document.getElementById("webgl-container");
+        const waveCanvas = document.getElementById("waveCanvas");
+        const waveCtx = waveCanvas.getContext("2d");
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x090a0f, 0.035);
+
+        const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(5.5, 4.5, 7.0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x090a0f, 1);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.maxPolarAngle = Math.PI / 2 + 0.02;
+        controls.target.set(0, 0.8, 1.8);
+
+        // Lighting
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(4, 8, 4);
+        scene.add(dirLight);
+
+        // Ground Grid (6m x 6m room)
+        const grid = new THREE.GridHelper(8, 16, 0x27272a, 0x141418);
+        grid.position.set(0, 0, 1.8);
+        scene.add(grid);
+
+        // Room Perimeter Bounds (Wireframe Box)
+        const roomW = 4.2, roomH = 2.6, roomD = 4.5;
+        const roomBox = new THREE.BoxGeometry(roomW, roomH, roomD);
+        const roomEdges = new THREE.EdgesGeometry(roomBox);
+        const roomLine = new THREE.LineSegments(roomEdges, new THREE.LineBasicMaterial({
+            color: 0x3f3f46,
+            transparent: true,
+            opacity: 0.3
+        }));
+        roomLine.position.set(0, roomH / 2, 1.8);
+        scene.add(roomLine);
+
+        // ---------------------------------------------------------------------
+        // 2. Physical Sensor Nodes
+        // ---------------------------------------------------------------------
+        function createSensorNode(label, colorHex, pos) {
+            const group = new THREE.Group();
+            group.position.copy(pos);
+
+            // Node Base
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(0.22, 0.12, 0.16),
+                new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 })
+            );
+            box.position.y = 0.06;
+            group.add(box);
+
+            // Glowing Indicator LED
+            const led = new THREE.Mesh(
+                new THREE.SphereGeometry(0.04, 16, 16),
+                new THREE.MeshBasicMaterial({ color: colorHex })
+            );
+            led.position.set(0, 0.13, 0);
+            group.add(led);
+
+            // Pulsing Range Ring on Floor
+            const ringGeom = new THREE.RingGeometry(0.3, 0.35, 32);
+            ringGeom.rotateX(-Math.PI / 2);
+            const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(ringGeom, ringMat);
+            ring.position.y = 0.01;
+            group.add(ring);
+
+            scene.add(group);
+            return { group, ring };
+        }
+
+        // Node 1 (Desk Receiver - on PC): Position (0, 0, 0)
+        const node1 = createSensorNode("RX (DESK)", 0x38bdf8, new THREE.Vector3(0, 0, 0));
+
+        // Node 2 (Wall Beacon - on Powerbank): Position (0, 0, 3.6m across room)
+        const node2 = createSensorNode("TX (WALL)", 0x34d399, new THREE.Vector3(0, 0, 3.6));
+
+        // Direct RF Fresnel Beam Line
+        const beamGeom = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0.12, 0),
+            new THREE.Vector3(0, 0.12, 3.6)
+        ]);
+        const beamMat = new THREE.LineDashedMaterial({
+            color: 0x38bdf8,
+            dashSize: 0.15,
+            gapSize: 0.08,
+            transparent: true,
+            opacity: 0.6
+        });
+        const beamLine = new THREE.Line(beamGeom, beamMat);
+        beamLine.computeLineDistances();
+        scene.add(beamLine);
+
+        // ---------------------------------------------------------------------
+        // 3. Holographic Spatial Human Tracker
+        // ---------------------------------------------------------------------
+        const humanGroup = new THREE.Group();
+        humanGroup.position.set(0, 0, 1.8); // Default centered between nodes
+        scene.add(humanGroup);
+
+        // Clean Cylindrical Human Avatar (Modern Minimalist Hologram)
+        const avatarMat = new THREE.MeshStandardMaterial({
+            color: 0x38bdf8,
+            transparent: true,
+            opacity: 0.75,
+            roughness: 0.3,
+            metalness: 0.2
+        });
+
+        // Torso / Body Capsule
+        const bodyGeom = new THREE.CylinderGeometry(0.18, 0.14, 0.95, 16);
+        bodyGeom.translate(0, 0.95 / 2, 0);
+        const bodyMesh = new THREE.Mesh(bodyGeom, avatarMat);
+        bodyMesh.position.y = 0.55;
+        humanGroup.add(bodyMesh);
+
+        // Head
+        const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 16), avatarMat);
+        headMesh.position.y = 1.65;
+        humanGroup.add(headMesh);
+
+        // Ground Presence Halo
+        const haloGeom = new THREE.RingGeometry(0.05, 0.45, 32);
+        haloGeom.rotateX(-Math.PI / 2);
+        const haloMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+        const groundHalo = new THREE.Mesh(haloGeom, haloMat);
+        groundHalo.position.y = 0.015;
+        humanGroup.add(groundHalo);
+
+        // ---------------------------------------------------------------------
+        // 4. Signal Processing & Web Serial Connection
+        // ---------------------------------------------------------------------
+        let baseline = 1.20;
+        let baselineInit = false;
+        const rawHistory = [];
+        const waveHistory = new Float32Array(50);
+        let targetZ = 1.8; // Target position along room axis
+        let currentEnergy = 0.0;
+        let lastPktCount = 0;
+        let pps = 0;
+        let lastPpsTime = performance.now();
+        let pktCounter = 0;
+
+        function updateDSP(metricVal, rssi, totalPkts) {
+            pktCounter++;
+            const now = performance.now();
+            if (now - lastPpsTime >= 500) {
+                const dt = (now - lastPpsTime) / 1000;
+                pps = Math.round(pktCounter / dt);
+                pktCounter = 0;
+                lastPpsTime = now;
+
+                const telemEl = document.getElementById("liveTelemetry");
+                telemEl.innerHTML = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 8px #34d399;"></span> RF BEAM: ${pps} Hz · RSSI: ${rssi} dBm · PKTS: ${totalPkts}`;
+                telemEl.style.color = "#34d399";
+            }
+
+            // Rolling history for baseline & variance
+            rawHistory.push(metricVal);
+            if (rawHistory.length > 30) rawHistory.shift();
+
+            if (!baselineInit) {
+                if (rawHistory.length >= 10) {
+                    let s = 0;
+                    for (let v of rawHistory) s += v;
+                    baseline = s / rawHistory.length;
+                    baselineInit = true;
+                } else {
+                    baseline = metricVal;
+                }
+            }
+
+            // Calculate Variance / Standard Deviation over rolling window
+            let sum = 0;
+            for (let v of rawHistory) sum += v;
+            const mean = sum / rawHistory.length;
+            let sqDiff = 0;
+            for (let v of rawHistory) sqDiff += (v - mean) * (v - mean);
+            const stdDev = Math.sqrt(sqDiff / rawHistory.length);
+
+            // Gentle continuous baseline tracker during deep stillness
+            if (stdDev < 0.02) {
+                baseline = (baseline * 0.99) + (mean * 0.01);
+            }
+
+            const diff = metricVal - baseline;
+
+            // Waveform update
+            for (let i = 0; i < 49; i++) waveHistory[i] = waveHistory[i + 1];
+            waveHistory[49] = diff;
+
+            // Perturbation Energy (0.0 to 1.0)
+            const instEnergy = Math.min(1.0, stdDev * 4.5);
+            currentEnergy = (currentEnergy * 0.7) + (instEnergy * 0.3);
+
+            // Position Mapping:
+            // High energy & negative diff -> user moving toward desk (Node 1, Z -> 0.8m)
+            // High energy & positive diff -> user moving toward back wall (Node 2, Z -> 2.8m)
+            // Stillness -> remains stable at current location
+            if (currentEnergy > 0.15) {
+                const shift = diff * 0.8;
+                targetZ = Math.max(0.5, Math.min(3.1, targetZ + shift));
+            }
+
+            // Update UI Indicators
+            const statusLabel = document.getElementById("statusLabel");
+            const statusDot = document.getElementById("statusDot");
+            const energyFill = document.getElementById("energyFill");
+            const valEnergy = document.getElementById("valEnergy");
+            const valPos = document.getElementById("valPos");
+            const valVel = document.getElementById("valVel");
+            const valPackets = document.getElementById("valPackets");
+
+            valPackets.innerText = `${totalPkts || 0} PKTS`;
+            valPos.innerText = `Z: ${targetZ.toFixed(2)} m (${targetZ < 1.3 ? "NEAR DESK" : (targetZ > 2.3 ? "NEAR WALL" : "MID-ROOM")})`;
+
+            const pctEnergy = Math.round(currentEnergy * 100);
+            valEnergy.innerText = `${pctEnergy}%`;
+            energyFill.style.width = `${pctEnergy}%`;
+
+            if (currentEnergy > 0.35) {
+                statusLabel.innerText = "ACTIVE MOTION DETECTED";
+                statusLabel.style.color = "var(--accent-rose)";
+                statusDot.style.background = "var(--accent-rose)";
+                statusDot.style.boxShadow = "0 0 10px var(--accent-rose)";
+                energyFill.style.background = "var(--accent-rose)";
+                avatarMat.color.setHex(0xfb7185);
+                haloMat.color.setHex(0xfb7185);
+                valVel.innerText = `${(currentEnergy * 1.2).toFixed(2)} m/s`;
+            } else if (currentEnergy > 0.08) {
+                statusLabel.innerText = "SUBTLE MOTION / BREATHING";
+                statusLabel.style.color = "var(--accent-amber)";
+                statusDot.style.background = "var(--accent-amber)";
+                statusDot.style.boxShadow = "0 0 10px var(--accent-amber)";
+                energyFill.style.background = "var(--accent-amber)";
+                avatarMat.color.setHex(0xfbbf24);
+                haloMat.color.setHex(0xfbbf24);
+                valVel.innerText = "0.08 m/s";
+            } else {
+                statusLabel.innerText = "ROOM STILL · CALM";
+                statusLabel.style.color = "var(--accent-green)";
+                statusDot.style.background = "var(--accent-green)";
+                statusDot.style.boxShadow = "0 0 10px var(--accent-green)";
+                energyFill.style.background = "var(--accent-green)";
+                avatarMat.color.setHex(0x38bdf8);
+                haloMat.color.setHex(0x38bdf8);
+                valVel.innerText = "0.00 m/s";
+            }
+        }
+
+        // Web Serial Connect
+        document.getElementById("btnConnect").addEventListener("click", async () => {
+            if (!("serial" in navigator)) { alert("Use Chrome or Edge for Web Serial!"); return; }
+            try {
+                const port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                const btn = document.getElementById("btnConnect");
+                btn.innerText = "Connected";
+                btn.style.background = "#34d399";
+                btn.style.color = "#090a0f";
+
+                const textDecoder = new TextDecoderStream();
+                port.readable.pipeTo(textDecoder.writable);
+                const reader = textDecoder.readable.getReader();
+
+                let buffer = "";
+                const radarPattern = /RADAR:([0-9.]+),RSSI:([0-9-]+),CSI_LEN:([0-9]+),PACKETS:([0-9]+)/;
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += value;
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop();
+
+                    for (let line of lines) {
+                        const m = radarPattern.exec(line);
+                        if (m) {
+                            updateDSP(parseFloat(m[1]), parseInt(m[2]), parseInt(m[4]));
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Serial error:", err);
+            }
+        });
+
+        // Zero Baseline Button
+        document.getElementById("btnZero").addEventListener("click", () => {
+            baselineInit = false;
+            rawHistory.length = 0;
+            currentEnergy = 0;
+            const telemEl = document.getElementById("liveTelemetry");
+            telemEl.innerText = "BASELINE CALIBRATED TO STATIC ROOM";
+            telemEl.style.color = "#fbbf24";
+        });
+
+        // ---------------------------------------------------------------------
+        // 5. Render & Animation Loop
+        // ---------------------------------------------------------------------
+        const clock = new THREE.Clock();
+
+        function drawWaveform() {
+            waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+            const w = waveCanvas.width;
+            const h = waveCanvas.height;
+            const mid = h / 2;
+
+            waveCtx.strokeStyle = currentEnergy > 0.35 ? "#fb7185" : (currentEnergy > 0.08 ? "#fbbf24" : "#38bdf8");
+            waveCtx.lineWidth = 1.5;
+            waveCtx.beginPath();
+
+            const step = w / 50;
+            for (let i = 0; i < 50; i++) {
+                const y = mid - (waveHistory[i] * (h * 0.45));
+                if (i === 0) waveCtx.moveTo(0, y); else waveCtx.lineTo(i * step, y);
+            }
+            waveCtx.stroke();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const elapsed = clock.getElapsedTime();
+
+            // Smooth Interpolation to target physical position
+            const lerpFactor = 0.08;
+            humanGroup.position.z += (targetZ - humanGroup.position.z) * lerpFactor;
+
+            // Gentle breathing chest expansion
+            const breath = Math.sin(elapsed * 2.2) * 0.025;
+            bodyMesh.scale.set(1.0 + breath, 1.0, 1.0 + breath);
+
+            // Node range ring pulse
+            node1.ring.scale.setScalar(1.0 + Math.sin(elapsed * 3) * 0.15);
+            node2.ring.scale.setScalar(1.0 + Math.sin(elapsed * 3 + 1) * 0.15);
+
+            // Ground halo scale matches perturbation energy
+            groundHalo.scale.setScalar(1.0 + currentEnergy * 0.8);
+
+            controls.update();
+            drawWaveform();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

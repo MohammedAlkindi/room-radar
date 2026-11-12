@@ -1,0 +1,3 @@
+@echo off
+echo Launching 3D Wi-Fi Hologram & DensePose Room Scanner...
+start "" "%~dp0radar_3d_hologram.html"

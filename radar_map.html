@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 True Cartesian 2D Radar & Wi-Fi Tracking Console</title>
+    <style>
+        :root {
+            --bg: #06090f;
+            --panel: #0c121d;
+            --border: #182338;
+            --cyan: #00f0ff;
+            --green: #10b981;
+            --amber: #f59e0b;
+            --red: #ff3366;
+            --purple: #a855f7;
+            --text: #e2e8f0;
+            --muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar Controls */
+        #sidebar {
+            width: 370px;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 14px;
+            z-index: 10;
+            box-shadow: 10px 0 30px rgba(0,0,0,0.6);
+            overflow-y: auto;
+        }
+
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 240, 255, 0.1);
+            color: var(--cyan);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        h1 { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+        p.desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+        .btn {
+            background: linear-gradient(135deg, #00f0ff, #0077ff);
+            color: #000;
+            font-weight: 700;
+            font-size: 13px;
+            border: none;
+            padding: 11px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 0 25px rgba(0, 240, 255, 0.5); }
+        .btn:active { transform: translateY(1px); }
+
+        .btn-secondary {
+            background: #141c2c;
+            color: var(--text);
+            box-shadow: none;
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: #1f2b42; box-shadow: none; }
+
+        .btn-group { display: flex; gap: 8px; }
+        .btn-group .btn { flex: 1; }
+
+        .sensor-switch {
+            display: flex;
+            background: #080c14;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            padding: 3px;
+        }
+        .sensor-btn {
+            flex: 1;
+            padding: 8px 6px;
+            font-size: 11px;
+            font-weight: 700;
+            background: transparent;
+            color: var(--muted);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .sensor-btn.active {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+        }
+        .sensor-btn.wifi-active {
+            background: linear-gradient(135deg, #00f0ff, #0284c7);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+        }
+
+        /* Targets Info Cards */
+        .target-cards-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .target-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 11px;
+            transition: all 0.3s;
+        }
+        .target-card.t1 { border-left: 4px solid var(--green); }
+        .target-card.t2 { border-left: 4px solid var(--cyan); }
+        .target-card.t3 { border-left: 4px solid var(--amber); }
+
+        .target-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 700;
+        }
+        .target-coords {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .target-meta {
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .stat-card {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+        .stat-val { font-size: 18px; font-weight: 800; font-family: "JetBrains Mono", monospace; color: #fff; }
+
+        .instruction-box {
+            background: rgba(16, 185, 129, 0.06);
+            border: 1px dashed rgba(16, 185, 129, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 11px;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+        .instruction-box strong { color: var(--green); }
+
+        /* Workspace */
+        #workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: radial-gradient(circle at 50% 50%, #0b1324 0%, #04060b 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #canvas-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        }
+
+        canvas#radarCanvas {
+            box-shadow: 0 0 60px rgba(0,0,0,0.9);
+            border-radius: 12px;
+            border: 1px solid #162238;
+            background: #04070e;
+            cursor: crosshair;
+        }
+
+        .hud-overlay {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(12, 18, 29, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-family: monospace;
+            font-size: 11px;
+            color: var(--cyan);
+            pointer-events: none;
+            display: flex;
+            gap: 16px;
+        }
+
+        /* Bottom Spectrogram / History */
+        #bottom-panel {
+            height: 120px;
+            background: #070b13;
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 8px 20px;
+            gap: 4px;
+        }
+        .bottom-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        canvas#timelineCanvas {
+            width: 100%;
+            height: 85px;
+            border-radius: 6px;
+            border: 1px solid #141c2d;
+            background: #020408;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="header-badge">
+            <span class="indicator-dot" style="background: var(--green);"></span>
+            True (X,Y) Cartesian Radar
+        </div>
+
+        <div>
+            <h1>Radar Tracking Console</h1>
+            <p class="desc">Supports 24GHz FMCW mmWave Radar & Wi-Fi CSI Multipath</p>
+        </div>
+
+        <!-- Sensor Engine Mode Selector -->
+        <div class="sensor-switch">
+            <button class="sensor-btn active" id="btnModeLD2450">🎯 24GHz mmWave (LD2450)</button>
+            <button class="sensor-btn" id="btnModeWiFi">📶 Wi-Fi CSI Radar</button>
+        </div>
+
+        <button id="btnConnect" class="btn">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Connect ESP32 (COM11)
+        </button>
+
+        <div class="btn-group">
+            <button id="btnSim" class="btn btn-secondary">
+                Simulate 2 People 🚶‍♂️🚶‍♀️
+            </button>
+            <button id="btnCalibrate" class="btn btn-secondary" title="Clear motion paths">
+                Clear Trails
+            </button>
+        </div>
+
+        <!-- Active Tracked People HUD -->
+        <div style="font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;">
+            Active Human Targets (Max 3)
+        </div>
+        <div class="target-cards-container">
+            <div id="cardT1" class="target-card t1">
+                <div class="target-header">
+                    <span style="color: var(--green);">🟢 TARGET #1</span>
+                    <span id="t1Status" class="target-meta">TRACKING</span>
+                </div>
+                <div id="t1Coords" class="target-coords">X: -0.85m | Y: 2.40m</div>
+                <div id="t1Meta" class="target-meta">Speed: +0.42 m/s | Dist: 2.54m</div>
+            </div>
+
+            <div id="cardT2" class="target-card t2">
+                <div class="target-header">
+                    <span style="color: var(--cyan);">🔵 TARGET #2</span>
+                    <span id="t2Status" class="target-meta">TRACKING</span>
+                </div>
+                <div id="t2Coords" class="target-coords">X: +1.15m | Y: 3.60m</div>
+                <div id="t2Meta" class="target-meta">Speed: -0.15 m/s | Dist: 3.78m</div>
+            </div>
+
+            <div id="cardT3" class="target-card t3" style="opacity: 0.4;">
+                <div class="target-header">
+                    <span style="color: var(--amber);">🟡 TARGET #3</span>
+                    <span id="t3Status" class="target-meta">STANDBY</span>
+                </div>
+                <div id="t3Coords" class="target-coords">--</div>
+                <div id="t3Meta" class="target-meta">No target detected in zone</div>
+            </div>
+        </div>
+
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">Radar Mode</div>
+                <div id="valMode" class="stat-val" style="font-size: 15px; color: var(--green);">24GHz mmWave</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active People</div>
+                <div id="valCount" class="stat-val">2</div>
+            </div>
+        </div>
+
+        <div class="instruction-box">
+            💡 <strong>How it Works:</strong> The <strong>HLK-LD2450</strong> uses a 3-element phased array to measure millimeter distance & angle. It feeds exact $(X, Y)$ Cartesian coordinates into the ESP32 to draw moving people directly on your room map!
+        </div>
+    </div>
+
+    <div id="workspace">
+        <div class="hud-overlay">
+            <div>RADAR: <span id="hudSensor" style="color: #fff;">HLK-LD2450 FMCW</span></div>
+            <div>FOV: <span style="color: var(--green);">120° AZIMUTH</span></div>
+            <div>MAX RANGE: <span style="color: #fff;">6.0 METERS</span></div>
+            <div>RATE: <span id="hudFps">60</span> FPS</div>
+        </div>
+
+        <div id="canvas-wrapper">
+            <canvas id="radarCanvas" width="960" height="600"></canvas>
+        </div>
+
+        <div id="bottom-panel">
+            <div class="bottom-header">
+                <span>Real-Time Distance & Velocity Waveform History</span>
+                <span style="color: var(--green);">Target 1 (Green) vs Target 2 (Cyan)</span>
+            </div>
+            <canvas id="timelineCanvas" width="960" height="80"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("radarCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const tlCanvas = document.getElementById("timelineCanvas");
+        const tlCtx = tlCanvas.getContext("2d");
+
+        // Modes: 'ld2450' (mmWave) or 'csi' (Wi-Fi)
+        let activeEngine = 'ld2450';
+        let isConnected = false;
+        let isSimulating = true;
+
+        // Room & Radar Coordinate System
+        // Radar sits at bottom center of room: (radarX, radarY)
+        const radarPos = { x: 480, y: 550 };
+        const pixelsPerMeter = 85; // 85 pixels = 1 meter
+
+        // Real-world Room Furniture (Meters converted to Canvas)
+        const furniture = [
+            { id: "bed", name: "🛏️ BED", x: -2.4, y: 3.5, w: 1.6, h: 2.0, color: "rgba(59, 130, 246, 0.15)", border: "#3b82f6" },
+            { id: "desk", name: "🖥️ WORK DESK", x: 1.0, y: 1.8, w: 1.8, h: 0.9, color: "rgba(16, 185, 129, 0.15)", border: "#10b981" },
+            { id: "wardrobe", name: "🚪 WARDROBE", x: 1.5, y: 4.0, w: 1.4, h: 1.2, color: "rgba(139, 92, 246, 0.15)", border: "#8b5cf6" },
+            { id: "shelf", name: "📚 SHELVES", x: -2.5, y: 1.4, w: 0.8, h: 1.4, color: "rgba(236, 72, 153, 0.15)", border: "#ec4899" }
+        ];
+
+        // Tracked Targets Data (up to 3 people)
+        const targets = [
+            { id: 1, active: true, x: -0.85, y: 2.40, speed: 0.42, color: "#10b981", trail: [] },
+            { id: 2, active: true, x: 1.15, y: 3.60, speed: -0.15, color: "#00f0ff", trail: [] },
+            { id: 3, active: false, x: 0, y: 0, speed: 0, color: "#f59e0b", trail: [] }
+        ];
+
+        // Distance history for timeline
+        const historyData = [];
+
+        // Radar Sweep Animation
+        let sweepAngle = -Math.PI / 2;
+        let sweepDir = 1;
+
+        // Mode Toggles
+        document.getElementById("btnModeLD2450").addEventListener("click", () => {
+            activeEngine = 'ld2450';
+            document.getElementById("btnModeLD2450").className = "sensor-btn active";
+            document.getElementById("btnModeWiFi").className = "sensor-btn";
+            document.getElementById("valMode").innerText = "24GHz mmWave";
+            document.getElementById("valMode").style.color = "var(--green)";
+            document.getElementById("hudSensor").innerText = "HLK-LD2450 FMCW";
+        });
+
+        document.getElementById("btnModeWiFi").addEventListener("click", () => {
+            activeEngine = 'csi';
+            document.getElementById("btnModeWiFi").className = "sensor-btn wifi-active";
+            document.getElementById("btnModeLD2450").className = "sensor-btn";
+            document.getElementById("valMode").innerText = "Wi-Fi CSI Multipath";
+            document.getElementById("valMode").style.color = "var(--cyan)";
+            document.getElementById("hudSensor").innerText = "ESP32-S3 CSI PHY";
+        });
+
+        // Clear Trails
+        document.getElementById("btnCalibrate").addEventListener("click", () => {
+            targets.forEach(t => t.trail = []);
+        });
+
+        // Web Serial API (Direct Connect to COM11)
+        document.getElementById("btnConnect").addEventListener("click", async () => {
+            if (!("serial" in navigator)) {
+                alert("Web Serial is supported in Google Chrome, Microsoft Edge, and Opera!");
+                return;
+            }
+
+            try {
+                const port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                isConnected = true;
+                isSimulating = false;
+                const btn = document.getElementById("btnConnect");
+                btn.innerText = "ESP32 Connected ✅";
+                btn.style.background = "#10b981";
+
+                const textDecoder = new TextDecoderStream();
+                port.readable.pipeTo(textDecoder.writable);
+                const reader = textDecoder.readable.getReader();
+
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += value;
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop();
+
+                    for (let line of lines) {
+                        parseIncomingSerialLine(line);
+                    }
+                }
+            } catch (err) {
+                console.error("Serial error:", err);
+                alert("Serial Connection Note: If PowerShell is currently reading COM11, close that window first!");
+            }
+        });
+
+        // Parse lines from either LD2450 JSON or Wi-Fi CSI
+        function parseIncomingSerialLine(line) {
+            // 1. Check for LD2450 JSON Cartesian format:
+            // RADAR_CARTESIAN:{"targets":[{"id":1,"x":-850,"y":2400,"speed":15},...]}
+            if (line.includes("RADAR_CARTESIAN:")) {
+                try {
+                    const jsonStr = line.substring(line.indexOf("{"));
+                    const data = JSON.parse(jsonStr);
+                    handleCartesianFrame(data.targets);
+                } catch (e) {
+                    console.error("JSON parse error:", e);
+                }
+            }
+            // 2. Check for Wi-Fi CSI string:
+            // RADAR:1.45,RSSI:-32,...
+            else if (line.includes("RADAR:")) {
+                const match = /RADAR:([0-9.]+)/.exec(line);
+                if (match) {
+                    const metric = parseFloat(match[1]);
+                    // Map Wi-Fi disturbance into target motion
+                    if (metric > 1.6) {
+                        targets[0].active = true;
+                        targets[0].speed = (metric - 1.2) * 0.8;
+                    }
+                }
+            }
+        }
+
+        function handleCartesianFrame(tList) {
+            // Reset active states
+            targets.forEach(t => t.active = false);
+
+            tList.forEach(t => {
+                const idx = t.id - 1;
+                if (idx >= 0 && idx < 3) {
+                    targets[idx].active = true;
+                    // Convert mm to meters
+                    targets[idx].x = t.x / 1000.0;
+                    targets[idx].y = t.y / 1000.0;
+                    targets[idx].speed = t.speed / 100.0; // cm/s to m/s
+                }
+            });
+
+            updateSidebarHUD();
+        }
+
+        // Simulation Routine
+        document.getElementById("btnSim").addEventListener("click", () => {
+            isSimulating = !isSimulating;
+            document.getElementById("btnSim").innerText = isSimulating ? "Stop Sim ⏹️" : "Simulate 2 People 🚶‍♂️🚶‍♀️";
+        });
+
+        let simTime = 0;
+        function updateSimulation() {
+            if (!isSimulating) return;
+            simTime += 0.025;
+
+            // Target 1: Walking from door around desk and sitting
+            targets[0].active = true;
+            targets[0].x = Math.sin(simTime * 0.8) * 1.5;
+            targets[0].y = 2.2 + Math.cos(simTime * 0.8) * 1.0;
+            targets[0].speed = Math.cos(simTime * 0.8) * 0.6;
+
+            // Target 2: Walking between bed and wardrobe
+            targets[1].active = true;
+            targets[1].x = 1.0 + Math.sin(simTime * 0.5) * 1.2;
+            targets[1].y = 3.6 + Math.cos(simTime * 0.5) * 0.7;
+            targets[1].speed = -Math.sin(simTime * 0.5) * 0.45;
+
+            updateSidebarHUD();
+        }
+
+        function updateSidebarHUD() {
+            let activeCount = 0;
+            targets.forEach((t, i) => {
+                const card = document.getElementById(`cardT${i + 1}`);
+                const status = document.getElementById(`t${i + 1}Status`);
+                const coords = document.getElementById(`t${i + 1}Coords`);
+                const meta = document.getElementById(`t${i + 1}Meta`);
+
+                if (t.active) {
+                    activeCount++;
+                    card.style.opacity = "1";
+                    status.innerText = "TRACKING";
+                    coords.innerText = `X: ${t.x >= 0 ? '+' : ''}${t.x.toFixed(2)}m | Y: ${t.y.toFixed(2)}m`;
+                    const dist = Math.sqrt(t.x * t.x + t.y * t.y);
+                    meta.innerText = `Speed: ${t.speed >= 0 ? '+' : ''}${t.speed.toFixed(2)} m/s | Dist: ${dist.toFixed(2)}m`;
+                } else {
+                    card.style.opacity = "0.35";
+                    status.innerText = "STANDBY";
+                    coords.innerText = "--";
+                    meta.innerText = "No target detected";
+                }
+            });
+            document.getElementById("valCount").innerText = activeCount;
+        }
+
+        // Coordinate transformation: Radar (X meters, Y meters) -> Canvas (px, py)
+        function toCanvasCoords(meterX, meterY) {
+            return {
+                x: radarPos.x + (meterX * pixelsPerMeter),
+                y: radarPos.y - (meterY * pixelsPerMeter)
+            };
+        }
+
+        // Render Main Radar Display
+        function drawRadar() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw Range Rings (1m to 6m)
+            ctx.lineWidth = 1;
+            for (let r = 1; r <= 6; r++) {
+                const radiusPx = r * pixelsPerMeter;
+                ctx.strokeStyle = "rgba(24, 35, 56, 0.7)";
+                ctx.beginPath();
+                ctx.arc(radarPos.x, radarPos.y, radiusPx, Math.PI, 2 * Math.PI);
+                ctx.stroke();
+
+                // Meter distance labels
+                ctx.fillStyle = "rgba(100, 116, 139, 0.7)";
+                ctx.font = "10px monospace";
+                ctx.fillText(`${r}.0m`, radarPos.x + 8, radarPos.y - radiusPx + 12);
+            }
+
+            // 2. 120-Degree Field of View (FOV) Radar Aperture Cone
+            ctx.save();
+            const fovAngle = (120 * Math.PI) / 180; // 120 degrees
+            const startAngle = (3 * Math.PI / 2) - (fovAngle / 2);
+            const endAngle = (3 * Math.PI / 2) + (fovAngle / 2);
+            const maxRangePx = 6.0 * pixelsPerMeter;
+
+            const coneGrad = ctx.createRadialGradient(radarPos.x, radarPos.y, 10, radarPos.x, radarPos.y, maxRangePx);
+            coneGrad.addColorStop(0, "rgba(16, 185, 129, 0.08)");
+            coneGrad.addColorStop(1, "rgba(16, 185, 129, 0.01)");
+
+            ctx.fillStyle = coneGrad;
+            ctx.beginPath();
+            ctx.moveTo(radarPos.x, radarPos.y);
+            ctx.arc(radarPos.x, radarPos.y, maxRangePx, startAngle, endAngle);
+            ctx.closePath();
+            ctx.fill();
+
+            // Cone Boundary Lines
+            ctx.strokeStyle = "rgba(16, 185, 129, 0.3)";
+            ctx.beginPath();
+            ctx.moveTo(radarPos.x, radarPos.y);
+            ctx.lineTo(radarPos.x + Math.cos(startAngle) * maxRangePx, radarPos.y + Math.sin(startAngle) * maxRangePx);
+            ctx.moveTo(radarPos.x, radarPos.y);
+            ctx.lineTo(radarPos.x + Math.cos(endAngle) * maxRangePx, radarPos.y + Math.sin(endAngle) * maxRangePx);
+            ctx.stroke();
+            ctx.restore();
+
+            // 3. Draw Room Furniture
+            furniture.forEach(f => {
+                const p = toCanvasCoords(f.x, f.y);
+                const wPx = f.w * pixelsPerMeter;
+                const hPx = f.h * pixelsPerMeter;
+
+                ctx.fillStyle = f.color;
+                ctx.strokeStyle = f.border;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(p.x, p.y, wPx, hPx, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = f.border;
+                ctx.font = "bold 11px sans-serif";
+                ctx.fillText(f.name, p.x + 8, p.y + 18);
+            });
+
+            // 4. Moving Tactical Radar Sweep Line
+            sweepAngle += 0.02 * sweepDir;
+            if (sweepAngle > (-Math.PI / 2 + (fovAngle / 2))) sweepDir = -1;
+            if (sweepAngle < (-Math.PI / 2 - (fovAngle / 2))) sweepDir = 1;
+
+            ctx.strokeStyle = "rgba(16, 185, 129, 0.4)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(radarPos.x, radarPos.y);
+            ctx.lineTo(radarPos.x + Math.cos(sweepAngle) * maxRangePx, radarPos.y + Math.sin(sweepAngle) * maxRangePx);
+            ctx.stroke();
+
+            // 5. Draw Radar Sensor Hardware Icon
+            ctx.fillStyle = "#10b981";
+            ctx.beginPath();
+            ctx.arc(radarPos.x, radarPos.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 11px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("📡 HLK-LD2450 RADAR", radarPos.x, radarPos.y + 22);
+            ctx.textAlign = "start";
+
+            // 6. Draw Tracked Human Targets (with trails and velocity vectors!)
+            targets.forEach(t => {
+                if (!t.active) return;
+
+                const cPos = toCanvasCoords(t.x, t.y);
+
+                // Add to breadcrumb trail
+                t.trail.push({ x: cPos.x, y: cPos.y });
+                if (t.trail.length > 35) t.trail.shift();
+
+                // Draw Breadcrumb Path
+                if (t.trail.length > 1) {
+                    ctx.save();
+                    for (let i = 0; i < t.trail.length - 1; i++) {
+                        const alpha = (i / t.trail.length) * 0.6;
+                        ctx.strokeStyle = t.color;
+                        ctx.globalAlpha = alpha;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(t.trail[i].x, t.trail[i].y);
+                        ctx.lineTo(t.trail[i + 1].x, t.trail[i + 1].y);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+
+                // Pulsing Target Glow Aura
+                const pulse = Math.sin(Date.now() * 0.008) * 4;
+                const glow = ctx.createRadialGradient(cPos.x, cPos.y, 2, cPos.x, cPos.y, 25 + pulse);
+                glow.addColorStop(0, t.color);
+                glow.addColorStop(1, "rgba(0,0,0,0)");
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(cPos.x, cPos.y, 25 + pulse, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Target Core Dot
+                ctx.fillStyle = "#ffffff";
+                ctx.beginPath();
+                ctx.arc(cPos.x, cPos.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Target Outline
+                ctx.strokeStyle = t.color;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(cPos.x, cPos.y, 10, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Velocity Vector Arrow
+                const vectorLen = t.speed * 40;
+                ctx.strokeStyle = t.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(cPos.x, cPos.y);
+                // Radial velocity points towards or away from radar
+                const angleToRadar = Math.atan2(cPos.y - radarPos.y, cPos.x - radarPos.x);
+                const endX = cPos.x + Math.cos(angleToRadar) * vectorLen;
+                const endY = cPos.y + Math.sin(angleToRadar) * vectorLen;
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+
+                // Target Label Tag
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px monospace";
+                ctx.fillText(`P${t.id} (${t.x.toFixed(1)}m, ${t.y.toFixed(1)}m)`, cPos.x + 14, cPos.y + 4);
+            });
+        }
+
+        // Draw Timeline Waveform
+        function drawTimeline() {
+            tlCtx.clearRect(0, 0, tlCanvas.width, tlCanvas.height);
+            const w = tlCanvas.width;
+            const h = tlCanvas.height;
+
+            // Push current snapshot
+            historyData.push({
+                d1: targets[0].active ? Math.sqrt(targets[0].x ** 2 + targets[0].y ** 2) : 0,
+                d2: targets[1].active ? Math.sqrt(targets[1].x ** 2 + targets[1].y ** 2) : 0
+            });
+            if (historyData.length > w) historyData.shift();
+
+            // Draw Target 1 Line (Green)
+            tlCtx.strokeStyle = "#10b981";
+            tlCtx.lineWidth = 1.5;
+            tlCtx.beginPath();
+            historyData.forEach((pt, x) => {
+                const y = h - (pt.d1 / 6.0) * (h - 10) - 5;
+                if (x === 0) tlCtx.moveTo(x, y); else tlCtx.lineTo(x, y);
+            });
+            tlCtx.stroke();
+
+            // Draw Target 2 Line (Cyan)
+            tlCtx.strokeStyle = "#00f0ff";
+            tlCtx.lineWidth = 1.5;
+            tlCtx.beginPath();
+            historyData.forEach((pt, x) => {
+                const y = h - (pt.d2 / 6.0) * (h - 10) - 5;
+                if (x === 0) tlCtx.moveTo(x, y); else tlCtx.lineTo(x, y);
+            });
+            tlCtx.stroke();
+        }
+
+        function animate() {
+            updateSimulation();
+            drawRadar();
+            drawTimeline();
+            requestAnimationFrame(animate);
+        }
+        animate();
+    </script>
+</body>
+</html>
